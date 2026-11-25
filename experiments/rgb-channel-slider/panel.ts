@@ -4,10 +4,10 @@ const decimals = (step: number) => (String(step).split('.')[1] ?? '').length
 
 export function mountPanel() {
   const panel = document.createElement('aside')
-  panel.className = 'panel'
+  panel.className = 'panel is-collapsed' // по умолчанию свёрнута
   panel.innerHTML = `
     <header class="panel-head">
-      <button class="panel-toggle" type="button" aria-expanded="true">Parameters</button>
+      <button class="panel-toggle" type="button" aria-expanded="false">Parameters</button>
       <button class="panel-reset" type="button">Reset</button>
     </header>
     <div class="panel-body"></div>
