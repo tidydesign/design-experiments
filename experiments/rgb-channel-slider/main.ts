@@ -1,5 +1,5 @@
 import { gsap } from 'gsap'
-import { PHOTO_IDS, photoUrl } from './photos'
+import { PHOTO_IDS, photoUrl } from '../../src/unsplash'
 import { params } from './params'
 import { mountPanel } from './panel'
 import { createRenderer, type DrawItem, type Sprite } from './renderer'

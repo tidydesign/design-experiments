@@ -1,0 +1,6 @@
+{
+  "title": "Vertical 3D Gallery",
+  "description": "A vertical infinite stack of 10 random Unsplash photos. Click for the next one, long-press to zoom out and drag to jump.",
+  "tags": ["gsap", "stack", "long-press"],
+  "date": "2026-11-25"
+}

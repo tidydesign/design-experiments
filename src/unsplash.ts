@@ -1,4 +1,4 @@
-// Пул фото с unsplash.com (images.unsplash.com). При каждой загрузке берём 10 случайных.
+// Общий пул фото с unsplash.com (images.unsplash.com) для всех прототипов.
 export const PHOTO_IDS = [
   'photo-1792034305453-2b741d37da59',
   'photo-1792089741002-83a975330f97',
