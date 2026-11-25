@@ -5,14 +5,14 @@ import { resolve } from 'node:path'
 
 const [slug, ...titleParts] = process.argv.slice(2)
 if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-  console.error('Укажи slug латиницей через дефис: npm run new magnetic-button')
+  console.error('Pass a kebab-case slug: npm run new magnetic-button')
   process.exit(1)
 }
 
 const root = resolve(import.meta.dirname, '..')
 const dest = resolve(root, 'experiments', slug)
 if (existsSync(dest)) {
-  console.error(`experiments/${slug} уже существует`)
+  console.error(`experiments/${slug} already exists`)
   process.exit(1)
 }
 
@@ -26,4 +26,4 @@ writeFileSync(
   JSON.stringify({ title, description: '', tags: [], date: new Date().toISOString().slice(0, 10) }, null, 2) + '\n',
 )
 
-console.log(`✓ experiments/${slug} создан → http://localhost:5173/experiments/${slug}/`)
+console.log(`✓ experiments/${slug} created → http://localhost:5173/experiments/${slug}/`)

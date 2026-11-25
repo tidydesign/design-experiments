@@ -1,0 +1,6 @@
+{
+  "title": "RGB Channel Slider",
+  "description": "A marquee of 10 random Unsplash photos. Drag it to split the RGB channels and bend the frames.",
+  "tags": ["gsap", "marquee", "drag"],
+  "date": "2026-11-25"
+}

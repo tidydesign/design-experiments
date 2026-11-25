@@ -23,4 +23,4 @@ root.innerHTML = items.length
     </a>`,
       )
       .join('')
-  : `<p class="empty">Пока пусто. Создай первый: <code>npm run new my-idea</code></p>`
+  : `<p class="empty">Nothing here yet. Create the first one: <code>npm run new my-idea</code></p>`
