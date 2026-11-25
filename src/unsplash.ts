@@ -74,3 +74,29 @@ export const PHOTO_IDS = [
 
 export const photoUrl = (id: string, width = 1600) =>
   `https://images.unsplash.com/${id}?auto=format&fit=max&q=80&w=${width}`
+
+// Только горизонтальные фото из пула (ширина/высота ≥ 1.33, от 4:3 до 16:9)
+export const LANDSCAPE_IDS = [
+  'photo-1721102816677-e281e1e5c5e4',
+  'photo-1794749689343-f077c330bc04',
+  'photo-1792614268370-d7a7046adbcf',
+  'photo-1695960825939-8c67c73d7b46',
+  'photo-1793106525459-98f73ac38397',
+  'photo-1792674940834-0da4bd2d8fdf',
+  'photo-1795116164844-510bff88e757',
+  'photo-1759675739458-6e5a4a60a117',
+  'photo-1795180138375-5f25eef9dd37',
+  'photo-1795180536929-e24553f1ceda',
+  'photo-1795023383394-7081aad3402f',
+  'photo-1795204789041-dc04891d19b9',
+  'photo-1791493192217-b073e3641ebf',
+  'photo-1795353212813-96dbada70401',
+  'photo-1795173441864-38063d65b13d',
+  'photo-1795423887459-b4da724533bc',
+  'photo-1794840599034-2b1f923cdd56',
+  'photo-1793657387969-a0ea0116de89',
+  'photo-1795314063953-533977442ad9',
+  'photo-1795314064530-2311c7787aa5',
+  'photo-1794936585635-7671b9b1c642',
+  'photo-1794998808561-03ec973d0732',
+]

@@ -1,0 +1,56 @@
+/* Общая панель параметров (src/panel.ts) */
+.panel {
+  position: fixed; left: 16px; bottom: 16px; z-index: 100;
+  width: 260px; padding: 10px 14px 12px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font-size: 12px; color: var(--text);
+  user-select: none; -webkit-user-select: none;
+}
+.panel-head { display: flex; justify-content: space-between; align-items: center; }
+.panel button {
+  all: unset; cursor: pointer; font: inherit;
+  color: var(--muted); transition: color .2s;
+}
+.panel button:hover { color: var(--text); }
+.panel-toggle { font-weight: 600; color: var(--text) !important; }
+.panel .panel-toggle { display: inline-flex; align-items: center; gap: 8px; }
+/* Шеврон-стрелка: рисуем рамкой, чтобы размер не зависел от шрифта */
+.panel-toggle::before {
+  content: ''; width: 6px; height: 6px; margin: -3px 2px 0;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg); transition: transform .2s;
+}
+.panel.is-collapsed .panel-toggle::before { transform: rotate(-45deg); margin-top: 0; }
+.panel.is-collapsed .panel-body, .panel.is-collapsed .panel-reset { display: none; }
+
+.panel-body { display: grid; gap: 10px; margin-top: 10px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.panel-group {
+  margin-top: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); opacity: .7;
+}
+.panel-group:first-child { margin-top: 0; }
+.panel-row {
+  display: grid; grid-template-columns: 1fr auto; row-gap: 4px;
+  cursor: default;
+}
+.panel-label { color: var(--muted); }
+.panel-value { font-variant-numeric: tabular-nums; }
+.panel-row input { grid-column: 1 / -1; }
+
+.panel input[type='range'] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 16px; margin: 0; background: transparent; cursor: pointer;
+}
+.panel input[type='range']::-webkit-slider-runnable-track {
+  height: 2px; border-radius: 2px; background: var(--border);
+}
+.panel input[type='range']::-moz-range-track { height: 2px; border-radius: 2px; background: var(--border); }
+.panel input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px;
+  border-radius: 50%; background: var(--text); border: none;
+}
+.panel input[type='range']::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--text); border: none;
+}

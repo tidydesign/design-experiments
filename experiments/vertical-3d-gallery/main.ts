@@ -1,137 +1,170 @@
 import { gsap } from 'gsap'
-import { PHOTO_IDS, photoUrl } from '../../src/unsplash'
+import { LANDSCAPE_IDS, photoUrl } from '../../src/unsplash'
+import { mountPanel } from '../../src/panel'
+import { PARAM_GROUPS, params, store } from './params'
+import { createRenderer, type DrawItem, type Sprite } from './renderer'
 
 const COUNT = 10
-const MAX_W = 0.6 // доля ширины экрана
-const MAX_H = 0.6 // доля высоты экрана
-const PEEK = 0.1 // сколько видно соседних фото сверху/снизу, доля высоты экрана
-const OVERVIEW_PITCHES = 6 // в обзоре на экран влезает 6 шагов: 5 целых фото + 2 половинки
-const LONG_PRESS_MS = 320
+const OVERVIEW_PITCHES = 6 // в обзоре на экран влезает 6 шагов: 5 целых кадров + 2 половинки
 const TAP_SLOP = 6 // px — если палец сдвинулся больше, это уже не клик
+const WHEEL_MIN = 4 // px — мельче считаем шумом
+// Остальное настраивается с панели — см. params.ts
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 const dur = (s: number) => (reduceMotion ? 0.01 : s)
 
 const stage = document.querySelector<HTMLElement>('.stage')!
-const stack = document.querySelector<HTMLElement>('.stack')!
+const canvas = document.querySelector<HTMLCanvasElement>('canvas')!
+const renderer = createRenderer(canvas)
 
 // --- Загрузка фото ---
 // innerWidth бывает 0 (вкладка ещё скрыта) — тогда берём ширину монитора; w=0 Unsplash отдаёт как 1×1.
 const viewW = innerWidth || screen.width || 1440
-const reqWidth = Math.round(gsap.utils.clamp(800, 2400, viewW * devicePixelRatio * MAX_W))
+const reqWidth = Math.round(gsap.utils.clamp(800, 2400, viewW * devicePixelRatio * 0.6))
 
 const loadImage = (id: string) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image()
-    img.className = 'photo'
-    img.alt = ''
-    img.draggable = false
+    img.crossOrigin = 'anonymous' // нужно, чтобы картинку можно было отдать в WebGL
     img.onload = () => resolve(img)
     img.onerror = reject
     img.src = photoUrl(id, reqWidth)
   })
 
-// Берём с запасом: если какое-то фото не загрузится, в стеке всё равно будет 10
-const ids = gsap.utils.shuffle([...PHOTO_IDS]).slice(0, COUNT + 4)
+// Только горизонтальные; берём с запасом — если какое-то не загрузится, в стеке всё равно будет 10
+const ids = gsap.utils.shuffle([...LANDSCAPE_IDS]).slice(0, COUNT + 4)
+let sprites: Sprite[] = []
 
-// --- Раскладка ---
-// Фото стоят столбиком; c[i] — центр i-го фото на «ленте», L — длина всего круга.
-type Item = { img: HTMLImageElement; w: number; h: number; c: number }
-let items: Item[] = []
-let L = 0
-let pitch = 0 // средний шаг между центрами — для масштаба обзора
+// --- Раскладка: все кадры 16:9 одного размера ---
+let frameW = 0
+let frameH = 0
+let baseGap = 0
 
 const layout = () => {
-  const vw = innerWidth
-  const vh = innerHeight
-  // Зазор подобран так, чтобы у фото высотой 60% соседи выглядывали ровно на 10% высоты экрана
-  const gap = vh * ((1 - MAX_H) / 2 - PEEK)
-  let cursor = 0
-  items.forEach((it, i) => {
-    const fit = Math.min((vw * MAX_W) / it.img.naturalWidth, (vh * MAX_H) / it.img.naturalHeight)
-    it.w = it.img.naturalWidth * fit
-    it.h = it.img.naturalHeight * fit
-    it.img.style.width = `${it.w}px`
-    it.img.style.height = `${it.h}px`
-    if (i > 0) cursor += items[i - 1].h / 2 + gap + it.h / 2
-    it.c = cursor
-  })
-  const last = items[items.length - 1]
-  L = cursor + last.h / 2 + gap + items[0].h / 2
-  pitch = L / items.length
+  renderer.resize()
+  const vw = renderer.width
+  const vh = renderer.height
+  frameW = Math.min(vw * params.maxW, ((vh * params.maxH) * 16) / 9)
+  frameH = (frameW * 9) / 16
+  // соседи выглядывают ровно на peek высоты экрана
+  baseGap = Math.max(0, (vh - frameH) / 2 - vh * params.peek)
 }
-
-// Расстояние по кругу, приведённое к [-L/2, L/2)
-const wrapDelta = (d: number) => gsap.utils.wrap(-L / 2, L / 2, d)
 
 // --- Состояние ---
-const view = { s: 0, scale: 1 } // s — позиция центра экрана на «ленте», px
-let target = 0 // куда едем после кликов (копится при частых кликах)
+// p — дробный номер кадра в центре экрана (не заворачивается, круг каждые N)
+const view = { p: 0, scale: 1, gapK: 1 }
+let target = 0 // куда едем после кликов/скролла
 let overview = false
+let bend = 0 // 0..1 — насколько лента намотана на барабан
+let prevP = 0
 
-const nearestIndex = (s: number) => {
-  let best = 0
-  let bestD = Infinity
-  items.forEach((it, i) => {
-    const d = Math.abs(wrapDelta(it.c - s))
-    if (d < bestD) {
-      bestD = d
-      best = i
-    }
-  })
-  return best
+const pitch = () => frameH + baseGap * view.gapK
+
+const goTo = (p: number, duration: number, ease = 'power3.inOut') => {
+  target = p
+  gsap.to(view, { p, duration: dur(duration), ease, overwrite: 'auto' })
 }
 
-// Позиция центра i-го фото, ближайшая к s (s не заворачиваем — так твины идут без скачков)
-const snapPosition = (s: number) => s + wrapDelta(items[nearestIndex(s)].c - s)
+const items: DrawItem[] = []
 
-const render = () => {
-  const vw = innerWidth
-  const vh = innerHeight
-  stack.style.transform = `scale(${view.scale})`
-  for (const it of items) {
-    const y = vh / 2 + wrapDelta(it.c - view.s) - it.h / 2
-    it.img.style.transform = `translate3d(${(vw - it.w) / 2}px, ${y}px, 0)`
+const tick = (_: number, deltaMs: number) => {
+  if (!sprites.length) return
+  const dt = Math.max(1, deltaMs) / 1000
+  const frames = dt * 60
+  const vw = renderer.width
+  const vh = renderer.height
+  const n = sprites.length
+  const s = view.scale
+  const step = pitch() * s // шаг на экране
+
+  // Скорость ленты на экране → насколько выгнуть барабан
+  const speed = (Math.abs(view.p - prevP) * step) / dt
+  prevP = view.p
+  const bendTarget = reduceMotion ? 0 : Math.min(1, speed * params.drumStrength)
+  const k = bendTarget > bend ? params.drumAttack : params.drumRelease
+  bend += (bendTarget - bend) * (1 - Math.pow(1 - k, frames))
+  if (bend < 1e-4) bend = 0
+
+  // Видимые кадры (с запасом — на барабане их видно больше)
+  items.length = 0
+  const w = frameW * s
+  const h = frameH * s
+  const reach = Math.ceil(vh / step) + 2
+  const base = Math.round(view.p)
+  for (let x = base - reach; x <= base + reach; x++) {
+    const sprite = sprites[((x % n) + n) % n]
+    const cy = vh / 2 + (x - view.p) * step
+    items.push({ sprite, x: (vw - w) / 2, y: cy - h / 2, w, h })
   }
+  renderer.draw(items, bend / params.drumRadius, params.perspective, params.shade)
 }
 
-// --- Клик: следующее фото ---
-const next = () => {
-  const i = nearestIndex(target)
-  const j = (i + 1) % items.length
-  target = snapPosition(target) + (wrapDelta(items[j].c - items[i].c) + L) % L
-  gsap.to(view, { s: target, duration: dur(0.8), ease: 'power3.inOut', overwrite: 'auto' })
-}
+// --- Клик: верхняя половина экрана — предыдущий кадр, нижняя — следующий ---
+const stepByClick = (clientY: number) =>
+  goTo(Math.round(target) + (clientY < innerHeight / 2 ? -1 : 1), params.stepDuration)
+
+// --- Скролл колесом/тачпадом: пейджер, один жест = один кадр ---
+let lastWheelAt = 0
+let lockedUntil = 0 // пока идёт перелистывание, новые жесты не принимаем
+let wheelAbs: number[] = [] // последние |delta| — чтобы отличить новый свайп от инерции тачпада
+
+stage.addEventListener(
+  'wheel',
+  (e) => {
+    e.preventDefault()
+    if (pressing || !sprites.length) return
+    const now = performance.now()
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1
+    const d = e.deltaY * unit
+    const abs = Math.abs(d)
+    const gapSinceLast = now - lastWheelAt
+    lastWheelAt = now
+    if (abs < WHEEL_MIN) return
+
+    // Новый жест — если до этого была пауза, или если посреди затухающей инерции
+    // пришёл заметно более сильный толчок (пользователь свайпнул ещё раз)
+    const avg = wheelAbs.length ? wheelAbs.reduce((a, b) => a + b, 0) / wheelAbs.length : 0
+    const isNewGesture = gapSinceLast > params.wheelIdle || (abs > avg * 2 && abs > 20)
+    wheelAbs = [...wheelAbs.slice(-4), abs]
+    if (!isNewGesture || now < lockedUntil) return
+
+    lockedUntil = now + params.wheelLock
+    goTo(Math.round(target) + Math.sign(d), params.stepDuration)
+  },
+  { passive: false },
+)
 
 // --- Долгое нажатие: обзор, драг, выбор ---
-// Масштаб считаем по реальным соседям текущего фото: центр 3-го сверху/снизу ложится на край экрана.
-// Текущее фото держим по центру, поэтому берём более длинную сторону — 5 целых фото видно всегда,
-// на одном краю ровно половинка, на другом (если соседи ниже) чуть больше.
-const overviewScale = () => {
-  const n = items.length
-  const half = OVERVIEW_PITCHES / 2
-  if (n < OVERVIEW_PITCHES + 1) return innerHeight / (OVERVIEW_PITCHES * pitch)
-  const i = nearestIndex(view.s)
-  const c = items[i].c
-  const up = (c - items[(i - half + n) % n].c + L) % L
-  const down = (items[(i + half) % n].c - c + L) % L
-  return innerHeight / 2 / Math.max(up, down)
-}
+// Все кадры одной высоты, поэтому 6 шагов при обзорном зазоре ровно занимают экран:
+// 5 целых кадров по центру и по половинке сверху и снизу.
+const overviewScale = () => renderer.height / (OVERVIEW_PITCHES * (frameH + baseGap * params.overviewGap))
 
 const enterOverview = () => {
   overview = true
   stage.classList.add('is-overview', 'is-dragging')
   gsap.killTweensOf(view)
-  target = view.s
-  gsap.to(view, { scale: overviewScale(), duration: dur(0.6), ease: 'power3.out' })
+  target = view.p
+  gsap.to(view, {
+    scale: overviewScale(),
+    gapK: params.overviewGap,
+    duration: dur(params.zoomDuration),
+    ease: 'power3.out',
+  })
 }
 
 const exitOverview = (throwVelocity: number) => {
   overview = false
   stage.classList.remove('is-overview', 'is-dragging')
-  // бросок: продолжаем движение по инерции и встаём на ближайшее фото
-  target = snapPosition(view.s + throwVelocity * 0.25)
-  gsap.to(view, { s: target, scale: 1, duration: dur(0.75), ease: 'power3.inOut', overwrite: 'auto' })
+  // бросок: продолжаем движение по инерции и встаём на ближайший кадр
+  target = Math.round(view.p + (throwVelocity * 0.25) / pitch())
+  gsap.to(view, {
+    p: target,
+    scale: 1,
+    gapK: 1,
+    duration: dur(params.zoomDuration + 0.15),
+    ease: 'power3.inOut',
+    overwrite: 'auto',
+  })
 }
 
 let pressTimer = 0
@@ -140,17 +173,17 @@ let moved = false
 let startY = 0
 let lastY = 0
 let lastT = 0
-let velocity = 0 // px/с на «ленте»
+let velocity = 0 // px/с на ленте (без масштаба)
 
 stage.addEventListener('pointerdown', (e) => {
-  if (!items.length || e.button > 0) return
+  if (!sprites.length || e.button > 0) return
   pressing = true
   moved = false
   startY = lastY = e.clientY
   lastT = performance.now()
   velocity = 0
   stage.setPointerCapture(e.pointerId)
-  pressTimer = window.setTimeout(() => pressing && !moved && enterOverview(), LONG_PRESS_MS)
+  pressTimer = window.setTimeout(() => pressing && !moved && enterOverview(), params.longPress)
 })
 
 stage.addEventListener('pointermove', (e) => {
@@ -160,36 +193,57 @@ stage.addEventListener('pointermove', (e) => {
   const now = performance.now()
   // в обзоре стек уменьшен, поэтому 1px руки = 1/scale px ленты
   const ds = -(e.clientY - lastY) / view.scale
-  view.s += ds
+  view.p += ds / pitch()
   velocity = gsap.utils.interpolate(velocity, ds / (Math.max(1, now - lastT) / 1000), 0.4)
   lastY = e.clientY
   lastT = now
 })
 
-const release = () => {
+const release = (e: PointerEvent) => {
   if (!pressing) return
   pressing = false
   clearTimeout(pressTimer)
   if (overview) {
     exitOverview(performance.now() - lastT > 80 ? 0 : velocity)
   } else if (!moved) {
-    next()
+    stepByClick(e.clientY)
   }
 }
 stage.addEventListener('pointerup', release)
 stage.addEventListener('pointercancel', release)
 
-addEventListener('resize', () => {
-  const i = nearestIndex(view.s)
+const relayout = () => {
   layout()
-  view.s = target = items[i].c
-  if (overview) view.scale = overviewScale()
+  if (overview) {
+    gsap.killTweensOf(view, 'scale,gapK')
+    view.scale = overviewScale()
+    view.gapK = params.overviewGap
+  }
+}
+addEventListener('resize', relayout)
+
+// --- Кастомный курсор: серый круг 16×16 вместо системного ---
+const cursor = document.createElement('div')
+cursor.className = 'cursor'
+document.body.append(cursor)
+addEventListener('pointermove', (e) => {
+  if (e.pointerType !== 'mouse') return // на тач-экранах курсора нет
+  cursor.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`
+  // над панелью — обычный курсор, круг прячем
+  const overPanel = (e.target as Element).closest?.('.panel')
+  cursor.classList.toggle('is-visible', !overPanel)
+})
+document.documentElement.addEventListener('pointerleave', () => cursor.classList.remove('is-visible'))
+
+// Параметры раскладки и обзора требуют пересчёта; остальные читаются каждый кадр
+mountPanel(store, PARAM_GROUPS, (key) => {
+  if (['maxW', 'maxH', 'peek', 'overviewGap', '*'].includes(key as string)) relayout()
 })
 
-// --- Старт ---
+// --- Старт: ждём фото, раскладываем, запускаем ---
 const results = await Promise.allSettled(ids.map(loadImage))
-const imgs = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])).slice(0, COUNT)
-items = imgs.map((img) => ({ img, w: 0, h: 0, c: 0 }))
-stack.append(...imgs)
+sprites = results
+  .flatMap((r) => (r.status === 'fulfilled' ? [renderer.createSprite(r.value)] : []))
+  .slice(0, COUNT)
 layout()
-gsap.ticker.add(render)
+gsap.ticker.add(tick)

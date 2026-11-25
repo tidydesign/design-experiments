@@ -1,7 +1,7 @@
 import { gsap } from 'gsap'
 import { PHOTO_IDS, photoUrl } from '../../src/unsplash'
-import { params } from './params'
-import { mountPanel } from './panel'
+import { PARAM_GROUPS, params, store } from './params'
+import { mountPanel } from '../../src/panel'
 import { createRenderer, type DrawItem, type Sprite } from './renderer'
 
 const COUNT = 10
@@ -149,7 +149,7 @@ viewport.addEventListener('pointercancel', endDrag)
 
 addEventListener('resize', layout)
 
-mountPanel()
+mountPanel(store, PARAM_GROUPS)
 
 // --- Старт: ждём фото, раскладываем, запускаем ---
 const results = await Promise.allSettled(ids.map(loadImage))

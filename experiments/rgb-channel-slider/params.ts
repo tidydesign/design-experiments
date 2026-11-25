@@ -1,4 +1,6 @@
-// Настраиваемые параметры прототипа. Панель (panel.ts) меняет их на лету,
+import { createParams, type ParamGroup } from '../../src/panel'
+
+// Настраиваемые параметры прототипа. Панель (src/panel.ts) меняет их на лету,
 // main.ts читает каждый кадр.
 
 const defaults = {
@@ -19,16 +21,7 @@ const defaults = {
 
 export type Params = typeof defaults
 
-export type ParamDef = {
-  key: keyof Params
-  label: string
-  min: number
-  max: number
-  step: number
-  hint: string
-}
-
-export const PARAM_GROUPS: { title: string; params: ParamDef[] }[] = [
+export const PARAM_GROUPS: ParamGroup<keyof Params>[] = [
   {
     title: 'Marquee',
     params: [
@@ -56,21 +49,5 @@ export const PARAM_GROUPS: { title: string; params: ParamDef[] }[] = [
   },
 ]
 
-const STORAGE_KEY = 'rgb-channel-slider:params'
-
-const load = (): Params => {
-  try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') }
-  } catch {
-    return { ...defaults }
-  }
-}
-
-export const params: Params = load()
-
-export const saveParams = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(params))
-
-export const resetParams = () => {
-  Object.assign(params, defaults)
-  localStorage.removeItem(STORAGE_KEY)
-}
+export const store = createParams('rgb-channel-slider:params', defaults)
+export const params = store.params
