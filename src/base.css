@@ -1,0 +1,25 @@
+*, *::before, *::after { box-sizing: border-box; }
+:root {
+  --bg: #0e0e10;
+  --surface: #18181b;
+  --border: #2a2a2e;
+  --text: #f4f4f5;
+  --muted: #8b8b93;
+  --accent: #7c5cff;
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+a { color: inherit; }
+
+/* Кнопка «назад к галерее» на страницах экспериментов */
+.back-link {
+  position: fixed; top: 16px; left: 16px; z-index: 100;
+  padding: 6px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--border); backdrop-filter: blur(8px);
+  color: var(--muted); font-size: 13px; text-decoration: none;
+  transition: color .2s, border-color .2s;
+}
+.back-link:hover { color: var(--text); border-color: var(--muted); }

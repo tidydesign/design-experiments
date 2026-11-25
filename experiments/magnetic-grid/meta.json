@@ -1,0 +1,6 @@
+{
+  "title": "Magnetic Grid",
+  "description": "Сетка точек, которая тянется к курсору и пружинит обратно. GSAP quickTo.",
+  "tags": ["gsap", "cursor", "spring"],
+  "date": "2026-11-25"
+}

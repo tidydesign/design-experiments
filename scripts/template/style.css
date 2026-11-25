@@ -1,0 +1,2 @@
+.stage { min-height: 100vh; display: grid; place-items: center; }
+.box { width: 96px; height: 96px; border-radius: 20px; background: var(--accent); }
