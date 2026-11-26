@@ -6,7 +6,11 @@ const defaults = {
   maxW: 0.8, // макс. ширина кадра 16:9, доля ширины экрана
   maxH: 0.64, // макс. высота кадра, доля высоты экрана
   peek: 0.04, // сколько видно соседних кадров сверху/снизу, доля высоты экрана
+  // Mobile (портретный экран): кадр почти во всю ширину, зазор от ширины экрана
+  mobileMaxW: 0.92, // ширина кадра, доля ширины экрана
+  mobileGap: 0.08, // зазор между кадрами, доля ширины экрана
   // Paging
+  swipeDistance: 0.2, // доля шага — сколько протянуть пальцем, чтобы перелистнуть
   stepDuration: 0.8, // с — перелистывание по клику и скроллу
   wheelIdle: 200, // мс — пауза, после которой жест прокрутки считается законченным
   wheelLock: 200, // мс — после шага колесо игнорируется (гасит разгон свайпа тачпада)
@@ -35,8 +39,16 @@ export const PARAM_GROUPS: ParamGroup<keyof Params>[] = [
     ],
   },
   {
+    title: 'Mobile',
+    params: [
+      { key: 'mobileMaxW', label: 'Width', min: 0.5, max: 1, step: 0.01, hint: 'share of screen width, portrait screens' },
+      { key: 'mobileGap', label: 'Gap', min: 0, max: 0.5, step: 0.005, hint: 'share of screen width' },
+    ],
+  },
+  {
     title: 'Paging',
     params: [
+      { key: 'swipeDistance', label: 'Swipe distance', min: 0.05, max: 0.6, step: 0.01, hint: 'share of a step to drag before it pages' },
       { key: 'stepDuration', label: 'Step duration', min: 0.2, max: 2, step: 0.05, hint: 'seconds' },
       { key: 'wheelIdle', label: 'Wheel gesture gap', min: 50, max: 500, step: 10, hint: 'ms between wheel events that ends a gesture' },
       { key: 'wheelLock', label: 'Wheel lock', min: 0, max: 1000, step: 10, hint: 'ms the wheel is ignored after a step' },

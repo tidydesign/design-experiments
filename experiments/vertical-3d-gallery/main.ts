@@ -6,7 +6,8 @@ import { createRenderer, type DrawItem, type Sprite } from './renderer'
 
 const COUNT = 10
 const OVERVIEW_PITCHES = 6 // в обзоре на экран влезает 6 шагов: 5 целых кадров + 2 половинки
-const TAP_SLOP = 6 // px — если палец сдвинулся больше, это уже не клик
+const TAP_SLOP = 8 // px — если палец сдвинулся больше, это уже не клик, а свайп
+const FLICK = 1 // кадров/с — быстрее этого свайп листает, даже если протянут коротко
 const WHEEL_MIN = 4 // px — мельче считаем шумом
 // Остальное настраивается с панели — см. params.ts
 
@@ -44,6 +45,13 @@ const layout = () => {
   renderer.resize()
   const vw = renderer.width
   const vh = renderer.height
+  if (vw < vh) {
+    // портретный экран (телефон): кадр почти во всю ширину, зазор — от ширины
+    frameW = vw * params.mobileMaxW
+    frameH = (frameW * 9) / 16
+    baseGap = vw * params.mobileGap
+    return
+  }
   frameW = Math.min(vw * params.maxW, ((vh * params.maxH) * 16) / 9)
   frameH = (frameW * 9) / 16
   // соседи выглядывают ровно на peek высоты экрана
@@ -52,13 +60,26 @@ const layout = () => {
 
 // --- Состояние ---
 // p — дробный номер кадра в центре экрана (не заворачивается, круг каждые N)
-const view = { p: 0, scale: 1, gapK: 1 }
+// zoom — 0 обычный вид, 1 обзор
+const view = { p: 0, zoom: 0 }
 let target = 0 // куда едем после кликов/скролла
 let overview = false
 let bend = 0 // 0..1 — насколько лента намотана на барабан
 let prevP = 0
 
-const pitch = () => frameH + baseGap * view.gapK
+// Все кадры одной высоты, поэтому 6 шагов при обзорном зазоре ровно занимают экран:
+// 5 целых кадров по центру и по половинке сверху и снизу.
+const overviewScale = () => renderer.height / (OVERVIEW_PITCHES * (frameH + baseGap * params.overviewGap))
+
+// Экранные размеры при текущем zoom. Ленту целиком не масштабируем: каждый кадр
+// уменьшается вокруг своего центра, а шаг между центрами меняется отдельно.
+// Размер и шаг идут синхронно, так что зазор плавно перетекает между двумя состояниями.
+const geom = () => {
+  const s = overviewScale()
+  const h = gsap.utils.interpolate(frameH, frameH * s, view.zoom)
+  const step = gsap.utils.interpolate(frameH + baseGap, (frameH + baseGap * params.overviewGap) * s, view.zoom)
+  return { h, step }
+}
 
 const goTo = (p: number, duration: number, ease = 'power3.inOut') => {
   target = p
@@ -74,8 +95,7 @@ const tick = (_: number, deltaMs: number) => {
   const vw = renderer.width
   const vh = renderer.height
   const n = sprites.length
-  const s = view.scale
-  const step = pitch() * s // шаг на экране
+  const { h, step } = geom()
 
   // Скорость ленты на экране → насколько выгнуть барабан
   const speed = (Math.abs(view.p - prevP) * step) / dt
@@ -87,9 +107,8 @@ const tick = (_: number, deltaMs: number) => {
 
   // Видимые кадры (с запасом — на барабане их видно больше)
   items.length = 0
-  const w = frameW * s
-  const h = frameH * s
-  const reach = Math.ceil(vh / step) + 2
+  const w = (h * 16) / 9
+  const reach = Math.ceil(vh / 2 / step) + 2
   const base = Math.round(view.p)
   for (let x = base - reach; x <= base + reach; x++) {
     const sprite = sprites[((x % n) + n) % n]
@@ -135,36 +154,23 @@ stage.addEventListener(
 )
 
 // --- Долгое нажатие: обзор, драг, выбор ---
-// Все кадры одной высоты, поэтому 6 шагов при обзорном зазоре ровно занимают экран:
-// 5 целых кадров по центру и по половинке сверху и снизу.
-const overviewScale = () => renderer.height / (OVERVIEW_PITCHES * (frameH + baseGap * params.overviewGap))
-
 const enterOverview = () => {
   overview = true
   stage.classList.add('is-overview', 'is-dragging')
   gsap.killTweensOf(view)
   target = view.p
-  gsap.to(view, {
-    scale: overviewScale(),
-    gapK: params.overviewGap,
-    duration: dur(params.zoomDuration),
-    ease: 'power3.out',
-  })
+  gsap.to(view, { zoom: 1, duration: dur(params.zoomDuration), ease: 'power2.out' })
 }
 
 const exitOverview = (throwVelocity: number) => {
   overview = false
   stage.classList.remove('is-overview', 'is-dragging')
+  gsap.killTweensOf(view)
   // бросок: продолжаем движение по инерции и встаём на ближайший кадр
-  target = Math.round(view.p + (throwVelocity * 0.25) / pitch())
-  gsap.to(view, {
-    p: target,
-    scale: 1,
-    gapK: 1,
-    duration: dur(params.zoomDuration + 0.15),
-    ease: 'power3.inOut',
-    overwrite: 'auto',
-  })
+  target = Math.round(view.p + throwVelocity * 0.25)
+  const duration = dur(params.zoomDuration + 0.15)
+  gsap.to(view, { p: target, duration, ease: 'power3.out' })
+  gsap.to(view, { zoom: 0, duration, ease: 'power2.inOut' })
 }
 
 let pressTimer = 0
@@ -173,7 +179,8 @@ let moved = false
 let startY = 0
 let lastY = 0
 let lastT = 0
-let velocity = 0 // px/с на ленте (без масштаба)
+let velocity = 0 // кадров/с
+let grabTarget = 0 // куда лента ехала в момент касания
 
 stage.addEventListener('pointerdown', (e) => {
   if (!sprites.length || e.button > 0) return
@@ -182,19 +189,28 @@ stage.addEventListener('pointerdown', (e) => {
   startY = lastY = e.clientY
   lastT = performance.now()
   velocity = 0
+  grabTarget = Math.round(target)
   stage.setPointerCapture(e.pointerId)
   pressTimer = window.setTimeout(() => pressing && !moved && enterOverview(), params.longPress)
 })
 
 stage.addEventListener('pointermove', (e) => {
   if (!pressing) return
-  if (!moved && Math.abs(e.clientY - startY) > TAP_SLOP) moved = true
-  if (!overview) return
+  if (!moved) {
+    if (Math.abs(e.clientY - startY) <= TAP_SLOP) return
+    // начался свайп: долгого нажатия уже не будет, лента едет за пальцем
+    moved = true
+    clearTimeout(pressTimer)
+    gsap.killTweensOf(view, 'p')
+    lastY = e.clientY
+    lastT = performance.now()
+    return
+  }
   const now = performance.now()
-  // в обзоре стек уменьшен, поэтому 1px руки = 1/scale px ленты
-  const ds = -(e.clientY - lastY) / view.scale
-  view.p += ds / pitch()
-  velocity = gsap.utils.interpolate(velocity, ds / (Math.max(1, now - lastT) / 1000), 0.4)
+  // 1 шаг на экране = 1 кадр, в обзоре шаг меньше — палец двигает ленту быстрее
+  const dp = -(e.clientY - lastY) / geom().step
+  view.p += dp
+  velocity = gsap.utils.interpolate(velocity, dp / (Math.max(1, now - lastT) / 1000), 0.4)
   lastY = e.clientY
   lastT = now
 })
@@ -203,24 +219,24 @@ const release = (e: PointerEvent) => {
   if (!pressing) return
   pressing = false
   clearTimeout(pressTimer)
+  // если рука остановилась перед отпусканием — без броска
+  const v = performance.now() - lastT > 80 ? 0 : velocity
   if (overview) {
-    exitOverview(performance.now() - lastT > 80 ? 0 : velocity)
-  } else if (!moved) {
+    exitOverview(v)
+  } else if (moved) {
+    // свайп как пейджер: не больше одного кадра за жест
+    const dp = view.p - grabTarget
+    const dir = Math.abs(v) > FLICK ? Math.sign(v) : Math.abs(dp) > params.swipeDistance ? Math.sign(dp) : 0
+    goTo(grabTarget + dir, params.stepDuration, 'power3.out')
+  } else {
     stepByClick(e.clientY)
   }
 }
 stage.addEventListener('pointerup', release)
 stage.addEventListener('pointercancel', release)
 
-const relayout = () => {
-  layout()
-  if (overview) {
-    gsap.killTweensOf(view, 'scale,gapK')
-    view.scale = overviewScale()
-    view.gapK = params.overviewGap
-  }
-}
-addEventListener('resize', relayout)
+// размеры в обзоре считаются каждый кадр из параметров, так что хватает пересчёта кадра
+addEventListener('resize', layout)
 
 // --- Кастомный курсор: серый круг 16×16 вместо системного ---
 const cursor = document.createElement('div')
@@ -237,7 +253,7 @@ document.documentElement.addEventListener('pointerleave', () => cursor.classList
 
 // Параметры раскладки и обзора требуют пересчёта; остальные читаются каждый кадр
 mountPanel(store, PARAM_GROUPS, (key) => {
-  if (['maxW', 'maxH', 'peek', 'overviewGap', '*'].includes(key as string)) relayout()
+  if (['maxW', 'maxH', 'peek', 'mobileMaxW', 'mobileGap', '*'].includes(key as string)) layout()
 })
 
 // --- Старт: ждём фото, раскладываем, запускаем ---
